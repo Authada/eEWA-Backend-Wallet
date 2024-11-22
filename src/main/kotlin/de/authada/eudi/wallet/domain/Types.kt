@@ -59,4 +59,3 @@ value class HttpsUrl private constructor(val value: URL) {
     }
 }
 
-typealias IssuerId = HttpsUrl

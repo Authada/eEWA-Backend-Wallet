@@ -32,6 +32,9 @@ package de.authada.eudi.wallet
 
 import arrow.core.recover
 import arrow.core.some
+import com.nimbusds.jose.JOSEObjectType
+import com.nimbusds.jose.JWSHeader
+import com.nimbusds.jose.crypto.ECDSASigner
 import com.nimbusds.jose.jwk.Curve
 import com.nimbusds.jose.jwk.ECKey
 import com.nimbusds.jose.jwk.JWK
@@ -41,6 +44,8 @@ import com.nimbusds.jose.jwk.RSAKey
 import com.nimbusds.jose.jwk.gen.ECKeyGenerator
 import com.nimbusds.jose.util.Base64
 import com.nimbusds.jose.util.X509CertUtils
+import com.nimbusds.jwt.JWTClaimsSet
+import com.nimbusds.jwt.SignedJWT
 import com.nimbusds.oauth2.sdk.id.Issuer
 import com.nimbusds.oauth2.sdk.util.X509CertificateUtils
 import de.authada.eudi.wallet.KeyOption.GenerateRandom
@@ -54,11 +59,11 @@ import de.authada.eudi.wallet.domain.ValidateProof
 import de.authada.eudi.wallet.domain.VerifySeAttestation
 import de.authada.eudi.wallet.domain.WalletAttestationBuilder
 import de.authada.eudi.wallet.domain.iOSAttestationVerifier
+import de.authada.eudi.wallet.persistence.GenerateCNonce
 import de.authada.eudi.wallet.persistence.InMemoryCNonceRepository
 import de.authada.eudi.wallet.web.AttestationApi
 import de.authada.eudi.wallet.web.MetaDataApi
 import de.authada.eudi.wallet.web.NonceApi
-import de.authada.eudi.wallet.persistence.GenerateCNonce
 import io.netty.handler.ssl.SslContextBuilder
 import io.netty.handler.ssl.util.InsecureTrustManagerFactory
 import kotlinx.serialization.ExperimentalSerializationApi
@@ -134,7 +139,7 @@ internal object WebClients {
 @OptIn(ExperimentalSerializationApi::class)
 fun beans(clock: Clock) = beans {
     val walletPublicUrl = env.readRequiredUrl("wallet.publicUrl", removeTrailingSlash = true)
-    val issuerId = walletPublicUrl
+    val issuerId = env.readRequiredUrl("wallet.issuer-id", removeTrailingSlash = true).externalForm
     //
     // Signing key
     //
@@ -190,7 +195,7 @@ fun beans(clock: Clock) = beans {
     }
 
     bean {
-        ValidateProof(issuerId)
+        ValidateProof(walletPublicUrl.externalForm)
     }
 
     bean {
@@ -224,11 +229,15 @@ fun beans(clock: Clock) = beans {
     }
 
     bean {
+        val walletAttestationJwt =
+            SignedJWT.parse(env.getProperty("wallet.attestation.jwt") ?: generateAttestation(ref(), issuerId))
+
         WalletAttestationBuilder(
             issuerId,
             ref(),
             Duration.ofDays(365),
-            clock
+            clock,
+            walletAttestationJwt
         )
     }
 
@@ -365,6 +374,80 @@ private fun loadJwkFromKeystore(environment: Environment, prefix: String): JWK {
         }
     }
 }
+
+
+private fun generateAttestation(signingKey: WalletSigningKey, issuerId: String): String {
+    log.info("Generating new attestation for $issuerId")
+    val signingKeys = signingKey.key
+
+    val keyStoreTrustList = KeyStore.getInstance("PKCS12").apply {
+        load(
+            WalletBackendApplication::class.java.classLoader.getResourceAsStream("trustlist-keys.p12"),
+            "password".toCharArray()
+        )
+    }
+    val walletProviderTrustListKeys =
+        JWK.load(keyStoreTrustList, "wallet provider trustlist ca", "password".toCharArray())
+    val walletProviderTrustListSigner =
+        ECDSASigner(walletProviderTrustListKeys.toECKey().toECPrivateKey(), Curve.P_256)
+    return sign(
+        signingKeys,
+        walletProviderTrustListKeys.toPublicJWK(),
+        walletProviderTrustListSigner,
+        issuerId,
+        "wallet-provider-attestation+jwt"
+    ) {
+        this.claim(
+            "types",
+            arrayOf(
+                "urn:eu.europa.ec.eudi:pid:1",
+                "https://example.bmi.bund.de/credential/pid/1.0",
+                "eu.europa.ec.eudiw.pid.1",
+                "org.iso.18013.5.1.mDL",
+                "urn:eu.europa.ec.eudi:msisdn:1",
+                "urn:eu.europa.ec.eudi:email:1"
+            )
+        )
+    }
+}
+
+
+private fun sign(
+    bindingKey: JWK,
+    signingKey: JWK,
+    signer: ECDSASigner,
+    id: String,
+    type: String,
+    additionalClaims: JWTClaimsSet.Builder.() -> Unit = {}
+): String {
+    val now = Clock.systemUTC().instant()
+    val jwt = SignedJWT(
+        JWSHeader.Builder(signer.supportedECDSAAlgorithm())
+            .type(JOSEObjectType(type))
+            .jwk(signingKey)
+            .build(),
+        JWTClaimsSet.Builder()
+            .issuer("AUTHADA")
+            .subject(id)
+            .issueTime(
+                Date.from(now)
+            )
+            .expirationTime(Date.from(now + Duration.ofDays(365 * 3)))
+            .claim(
+                "cnf", mapOf(
+                    "jwk" to bindingKey.toPublicJWK().toJSONObject()
+                )
+            )
+            .apply {
+                additionalClaims(this)
+            }
+            .build()
+    ).apply {
+        sign(signer)
+    }
+    return jwt.serialize()
+}
+
 
 private enum class KeyOption {
     GenerateRandom,

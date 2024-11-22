@@ -19,7 +19,7 @@ import arrow.core.raise.Raise
 import de.authada.eudi.wallet.domain.UnvalidatedProof.Jwt
 
 class ValidateProof(
-    private val issuerId: IssuerId,
+    private val issuerId: String,
 ) {
 
     context (Raise<AttestationRequestError>)

@@ -39,10 +39,11 @@ enum class AttestationSecurityLevel(val value: String) {
 }
 
 class WalletAttestationBuilder(
-    private val issuerId: IssuerId,
+    private val issuerId: String,
     private val walletSigningKey: WalletSigningKey,
     private val expirationDuration: Duration,
     private val clock: Clock,
+    private val walletProviderAttestationJwt: SignedJWT
 ) : BuildWalletAttestation {
 
     private val signer = ECDSASigner(walletSigningKey.key.toECPrivateKey())
@@ -56,9 +57,10 @@ class WalletAttestationBuilder(
             JWSHeader.Builder(walletSigningKey.signingAlgorithm)
                 .jwk(walletSigningKey.key.toPublicJWK())
                 .type(JOSEObjectType("wallet-attestation+jwt"))
+                .customParam("jwt", walletProviderAttestationJwt.serialize())
                 .build(),
             JWTClaimsSet.Builder()
-                .issuer(issuerId.externalForm)
+                .issuer(issuerId)
                 .subject(clientId)
                 .issueTime(
                     Date.from(now)

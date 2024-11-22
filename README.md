@@ -9,6 +9,9 @@ Returns wallet attestation based on https://datatracker.ietf.org/doc/html/draft-
 - Checks device key proof.
 - Device key proof contains app attestation and SE attestation in the payload.
 
+## Changes in phase 2
+- Added wallet provider attestation to the wallet attestation in header field
+
 ## Signature and Key Algorithms
 Please use EC 256 bit keys and ES256 as signature algorithm for proofs.
 

@@ -94,7 +94,7 @@ data class ProofData(
 
 context (Raise<InvalidProof>)
 fun validateJwtProof(
-    issuerId: IssuerId,
+    issuerId: String,
     unvalidatedProof: UnvalidatedProof.Jwt,
 ): ProofData = result {
     val signedJwt = SignedJWT.parse(unvalidatedProof.jwt)
@@ -191,7 +191,7 @@ private val expectedType = JOSEObjectType("wallet-proof+jwt")
 private val maxSkew = 30.seconds
 
 private fun processor(
-    issuerId: IssuerId,
+    issuerId: String,
     keySelector: JWSKeySelector<SecurityContext>,
 ): JWTProcessor<SecurityContext> =
     DefaultJWTProcessor<SecurityContext>()
@@ -200,7 +200,7 @@ private fun processor(
             jwsKeySelector = keySelector
             jwtClaimsSetVerifier =
                 DefaultJWTClaimsVerifier<SecurityContext?>(
-                    issuerId.externalForm, // aud
+                    issuerId, // aud
                     JWTClaimsSet.Builder()
                         .build(),
                     setOf("iat", "nonce", "app_attestation"),

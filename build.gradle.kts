@@ -109,18 +109,16 @@ springBoot {
 }
 
 tasks.named<BootBuildImage>("bootBuildImage") {
-    imageName.set("registry.gitlab.corp.authada.de/backend/research/eudi/eudi-wallet-backend:authada-main-snapshot")
-    publish.set(false)
-//    environment.set(System.getenv())
-//    val env = environment.get()
-//    docker {
-//        publishRegistry {
-//            env["REGISTRY_URL"]?.let { url = it }
-//            env["REGISTRY_USERNAME"]?.let { username = it }
-//            env["REGISTRY_PASSWORD"]?.let { password = it }
-//        }
-//        env["DOCKER_METADATA_OUTPUT_TAGS"]?.let { tagStr ->
-//            tags = tagStr.split(delimiters = arrayOf("\n", " ")).onEach { println("Tag: $it") }
-//        }
-//    }
+    environment.set(System.getenv())
+    val env = environment.get()
+    docker {
+        publishRegistry {
+            env["REGISTRY_URL"]?.let { url = it }
+            env["REGISTRY_USERNAME"]?.let { username = it }
+            env["REGISTRY_PASSWORD"]?.let { password = it }
+        }
+        env["DOCKER_METADATA_OUTPUT_TAGS"]?.let { tagStr ->
+            tags = tagStr.split(delimiters = arrayOf("\n", " ")).onEach { println("Tag: $it") }
+        }
+    }
 }
